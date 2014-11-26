@@ -46,10 +46,10 @@ static struct dsi_cmd_desc dsi_detec_cmds = {
 	detect_set
 };
 DEFINE_LED_TRIGGER(bl_led_trigger);
-	/***1/3 touch suspend control from liulf begin***/
+	/***1/3 touch suspend control from liulf begin***//*
 extern int set_suspend_from_lcd(int);
 static int lcd_flag = 0;
-	/***1/3 touch suspend control from liulf end***/
+	*//***1/3 touch suspend control from liulf end***/
 
 
 /****liuyh kpdbl enable start*/
@@ -386,7 +386,7 @@ void mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 	struct mdss_panel_info *pinfo = NULL;
 	//int i;
 	/***2/3 touch suspend control from liulf begin***/
-	int ret;
+	/*int ret;*/
 	/***2/3 touch suspend control from liulf end***/
 
 	if (pdata == NULL) {
@@ -471,7 +471,7 @@ void mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		msleep(2);
 		wmb();
 	}
-	/***3/3 touch suspend control from liulf begin***/
+	/***3/3 touch suspend control from liulf begin***//*
 	msleep(10);
 	printk(KERN_DEBUG "touch suspend/resume enable begin\n");
 	if(lcd_flag < 3)
@@ -486,7 +486,7 @@ void mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		if(lcd_flag > 2)
 		ret = set_suspend_from_lcd(enable);
 		printk(KERN_DEBUG "ret =%d flag = %d touch resume enable end\n", ret, lcd_flag);
-	}
+	}*/
 	/***3/3 touch suspend control from liulf end***/
 }
 

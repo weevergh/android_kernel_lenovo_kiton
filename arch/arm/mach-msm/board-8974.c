@@ -37,7 +37,7 @@
 /*zangzhuo1, 2013.12.02, For Hall switch, END*/
 
 /*liulf2 2013.7.4. touch driver for s3408*/
-#if 1 
+#if 0 
 #include <linux/gpio.h>
 #include <linux/i2c.h>
 #include <linux/irq.h>
@@ -87,7 +87,7 @@ static struct memtype_reserve msm8974_reserve_table[] __initdata = {
 };
 
 /*liulf2 2013.7.4. touch driver for s3408*/
-#if 1
+#if 0
 #define MRST_IRQ_OFFSET 0x100
 #define RMI_INT_GPIO 61
 #define rmi_reset_gpio (60)
@@ -228,8 +228,9 @@ void __init msm8974_init(void)
 	regulator_has_full_constraints();
 	board_dt_populate(adata);
 	msm8974_add_drivers();
-        i2c_register_board_info(2,s3408_i2c_info,1);
-
+/* Commented out for updated driver
+	i2c_register_board_info(2,s3408_i2c_info,1);
+*/
     /* Tony Sun, 2013.11.25, For WIFI/BT read MAC from NV, START */
     lephone_nv_init();
     /* Tony Sun, 2013.11.25, For WIFI/BT read MAC from NV, END */

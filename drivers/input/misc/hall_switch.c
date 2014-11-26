@@ -28,7 +28,8 @@ static volatile int key_debug = 5;
 #define HALL_GPIO 62
 #endif
 
-extern int hall_ctrl(int);
+//extern int hall_ctrl(int);
+int hall_ctrl(int a) { return 1; }
 
 static struct hall_switch_data *this_data;
 //#if 1

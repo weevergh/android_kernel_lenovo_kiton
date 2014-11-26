@@ -14,6 +14,7 @@
 
 /include/ "msm8974-v2.2.dtsi"
 /include/ "msm8974-mtp.dtsi"
+/include/ "synaptics-dsx.dtsi"
 
 / {
 	model = "Qualcomm MSM 8974v2.2 MTP";
