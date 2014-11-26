@@ -15,17 +15,17 @@
  */
 
 &soc {
-	i2c@f9923000 {
+	i2c@f9924000 {
 		status = "ok";
 		#address-cells = <1>;
 		#size-cells = <0>;
-		synaptics_dsx@20 {
+		synaptics_dsx@38 {
 			compatible = "synaptics,dsx";
-			reg = <0x20>;
+			reg = <0x38>;
 			interrupt-parent = <&msmgpio>;
 			interrupts = <61 0x2>;
 			vdd_ana-supply = <&pm8941_l18>;
-			vcc_i2c-supply = <&pm8941_s3>;
+			vcc_i2c-supply = <&pm8941_lvs1>;
 			synaptics,pwr-reg-name = "vdd_ana";
 			synaptics,bus-reg-name = "vcc_i2c";
 			synaptics,irq-gpio = <&msmgpio 61 0x00>;
