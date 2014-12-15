@@ -3,10 +3,11 @@
 var fs = require('fs'),
 	path = require('path');
 
-function zeroFill( number, width ) {
+function padLeft( number, width, filler ) {
+	filler = filler || ' ';
 	width -= number.toString().length;
 	if ( width > 0 ) {
-		return new Array( width + (/\./.test( number ) ? 2 : 1) ).join( '0' ) + number;
+		return new Array( width + (/\./.test( number ) ? 2 : 1) ).join( filler ) + number;
 	}
 	return number + ""; // always return a string
 }
@@ -39,7 +40,7 @@ function extract_portion(fd, pos, length, output) {
 	} else o(output, new Buffer(0));
 }
 
-function examine_dt(file_path, extract) {
+function examine_dt(file_path, extract, output_dir) {
 	fs.open(file_path, 'r', function(err, fd) {
 	    if (err) {
 	        console.log("Failed to read file: " + err.message);
@@ -63,6 +64,7 @@ function examine_dt(file_path, extract) {
 			var qcdt_ver = header.readUInt32LE(4);
 			var dt_num = header.readUInt32LE(8);
 
+			console.log("");
 			console.log("QCDT Version:  " + qcdt_ver);
 			console.log("Number of DTs:  " + dt_num);
 			console.log("");
@@ -78,12 +80,20 @@ function examine_dt(file_path, extract) {
 					var soc_rev = entry.readUInt32LE(8);
 					var offset = entry.readUInt32LE(12);
 					var size = entry.readUInt32LE(16);
-					console.log("DT " + (++dt_idx) + ": Platform 0x" + platform_id.toString(16) + " Variant 0x" + variant_id.toString(16) + " SOC Rev 0x" + soc_rev.toString(16));
-					if(extract) extract_portion(fd, offset, size, dt_idx + ".dtb");
+					console.log("DT " + padLeft((++dt_idx), 3) + ": Platform 0x" + padLeft(platform_id.toString(16), 2, '0') + " Variant 0x" + padLeft(variant_id.toString(16), 2, '0') + " SOC Rev 0x" + soc_rev.toString(16));
+					if(extract) extract_portion(fd, offset, size, path.resolve(output_dir, dt_idx + ".dtb"));
 					check_dt_info(dt_idx);
-				}); else if(qcdt_ver === 2) {
-
-				} else console.log("Unsupported QCDT version.");
+				}); else if(qcdt_ver === 2) extract_portion(fd, 12 + 24 * dt_idx, 24, function(entry) {
+					var platform_id = entry.readUInt32LE(0);
+					var variant_id = entry.readUInt32LE(4);
+					var subtype = entry.readUInt32LE(8);
+					var soc_rev = entry.readUInt32LE(12);
+					var offset = entry.readUInt32LE(16);
+					var size = entry.readUInt32LE(20);
+					console.log("DT " + padLeft((++dt_idx), 3) + ": Platform 0x" + padLeft(platform_id.toString(16), 2, '0') + " Variant 0x" + padLeft(variant_id.toString(16), 2, '0') + " Sub Type 0x" + padLeft(subtype.toString(16), 2, '0') + " SOC Rev 0x" + soc_rev.toString(16));
+					if(extract) extract_portion(fd, offset, size, path.resolve(output_dir, dt_idx + ".dtb"));
+					check_dt_info(dt_idx);
+				}); else console.log("Unsupported QCDT version.");
 			}
 
 			check_dt_info(0);
@@ -93,15 +103,24 @@ function examine_dt(file_path, extract) {
 
 if(require.main === module) {
 	var imgfile = process.argv[3],
-		extract = false;
-	if(process.argv.length != 4) {
+		extract = false,
+		output = '.';
+	if(process.argv.length < 4) {
 		console.log("Usage:");
-		console.log("  " + process.argv[1] + ' <info|extract> <input image>');
+		console.log("  " + process.argv[1] + ' <info|extract> <input image> [-o extract_to_dir]');
 		return 0;
 	}
 	if((process.argv[2] === 'i') || (process.argv[2] === 'info')) extract = false;
-	else if((process.argv[2] === 'e') || (process.argv[2] === 'extract')) extract = true;
-	else {
+	else if((process.argv[2] === 'e') || (process.argv[2] === 'extract')) {
+		extract = true;
+		if((process.argv[4] === '-o') || (process.argv[4] === '--output')) {
+			output = process.argv[5];
+			if((typeof output !== 'string') || (!fs.existsSync(output)) || (!fs.statSync(output).isDirectory())) {
+				console.log('Invalid output directory: ' + output);
+				return 1;
+			}
+		}
+	} else {
 		console.log("Invalid action: " + process.argv[2]);
 		return 1;
 	}
@@ -111,7 +130,7 @@ if(require.main === module) {
 		console.log('Invalid image file: ' + imgfile);
 		return 1;
 	}
-	examine_dt(imgfile, extract);
+	examine_dt(imgfile, extract, output);
 } else module.exports = examine_dt;
 
 
