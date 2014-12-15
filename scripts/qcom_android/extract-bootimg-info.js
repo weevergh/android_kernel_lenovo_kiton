@@ -39,7 +39,7 @@ function extract_portion(fd, pos, length, output_file_path) {
 	}
 }
 
-function extract_info(file_path, page_size) {
+function examine_bootimg(file_path, page_size, output_dir) {
 	fs.open(file_path, 'r', function(err, fd) {
 	    if (err) {
 	        console.log("Failed to read file: " + err.message);
@@ -90,29 +90,33 @@ function extract_info(file_path, page_size) {
 				m = Math.floor((ramdisk_size + page_size_r - 1) / page_size_r),
 				o = Math.floor((second_size + page_size_r - 1) / page_size_r),
 				p = Math.floor((dt_size + page_size_r - 1) / page_size_r);
-			extract_portion(fd, 1 * page_size_r, kernel_size, prefix + "-kernel");
-			extract_portion(fd, (1 + n) * page_size_r, ramdisk_size, prefix + "-ramdisk");
-			extract_portion(fd, (1 + n + m) * page_size_r, second_size, prefix + "-second");
-			extract_portion(fd, (1 + n + m + o) * page_size_r, dt_size, prefix + "-dt");
+			extract_portion(fd, 1 * page_size_r, kernel_size, path.resolve(output_dir, prefix + "-kernel"));
+			extract_portion(fd, (1 + n) * page_size_r, ramdisk_size, path.resolve(output_dir, prefix + "-ramdisk"));
+			extract_portion(fd, (1 + n + m) * page_size_r, second_size, path.resolve(output_dir, prefix + "-second"));
+			extract_portion(fd, (1 + n + m + o) * page_size_r, dt_size, path.resolve(output_dir, prefix + "-dt"));
 	    });
 	});
 }
 
 if(require.main === module) {
 	var imgfile = "",
-		pagesize = 2048;
+		pagesize = 2048,
+		output = '.';
 	if(process.argv.length <= 2) {
 		console.log("Usage:");
 		console.log("  " + process.argv[1] + ' [options]');
 		console.log("  ");
 		console.log("  Options:");
 		console.log("     -i|--input [input file]");
+		console.log("     <-o|--output [dir]>");
 		console.log("     <-p|--pagesize [size]>");
 		return 0;
 	}
 	for(var i = 2; i < process.argv.length; i ++) {
 		if((process.argv[i] === '-i') || ((process.argv[i] === '--input')))
 			imgfile = process.argv[++i];
+		else if((process.argv[i] === '-o') || ((process.argv[i] === '--output')))
+			output = process.argv[++i];
 		else if((process.argv[i] === '-p') || ((process.argv[i] === '--pagesize')))
 			pagesize = parseInt(process.argv[++i]);
 		else {
@@ -126,15 +130,19 @@ if(require.main === module) {
 		console.log('Invalid image file: ' + imgfile);
 		return 1;
 	}
+	if((!output) || (typeof output !== 'string') || 
+		(output.trim().length === 0) || (!fs.existsSync(output)) ||
+		(!fs.statSync(output).isDirectory())) {
+		console.log('Invalid output directory: ' + output);
+		return 1;
+	}
 	if((typeof pagesize !== 'number') || (pagesize % 2048 !== 0)) {
 		console.log('Invalid pagesize: ' + pagesize);
 		return 1;
 	}
-	extract_info(imgfile, pagesize);
-} else {
-	console.log('As module');
-	module.exports = extract_info;
-}
+
+	examine_bootimg(imgfile, pagesize, output);
+} else module.exports = examine_bootimg;
 
 
 // The bootimg.h:
