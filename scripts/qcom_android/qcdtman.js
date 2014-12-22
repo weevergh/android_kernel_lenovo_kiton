@@ -6,9 +6,8 @@ var fs = require('fs'),
 function padLeft( number, width, filler ) {
 	filler = filler || ' ';
 	width -= number.toString().length;
-	if ( width > 0 ) {
+	if ( width > 0 )
 		return new Array( width + (/\./.test( number ) ? 2 : 1) ).join( filler ) + number;
-	}
 	return number + ""; // always return a string
 }
 
@@ -38,6 +37,24 @@ function extract_portion(fd, pos, length, output) {
 	    	o(output, b);
 		});
 	} else o(output, new Buffer(0));
+}
+
+
+function help() {
+	console.log(process.argv[1] + " <info|extract|create> [options] <input file/path>");
+	console.log("QCOM DT manipulation script.")
+	console.log(" Options:")
+	console.log("  common:");
+	console.log("   --help/-h            this help screen");
+	console.log("  info:");
+	console.log("   No available options");
+	console.log("  extract:");
+	console.log("   --output-dir/-o      output path");
+	console.log("  create:");
+	console.log("   --output-file/-o     output file");
+	console.log("   --page-size/-s       page size in bytes");
+	console.log("   --dt-tag/-d          alternate QCDT_DT_TAG");
+	console.log("   --force-v2/-2        use dtb v2 format");
 }
 
 var OF_DT_HEADER = 0xd00dfeed;
@@ -243,17 +260,68 @@ function build_dt(input_path, output, search_dt_tag, search_board_tag, force_v2,
 	});
 }
 
-if(require.main === module) {
-	function help() {
-		console.log(process.argv[1] + " [options] -o <output file> <input DTB path>");
-		console.log("  options:");
-		console.log("  --output-file/-o     output file");
-		console.log("  --page-size/-s       page size in bytes");
-		console.log("  --dt-tag/-d          alternate QCDT_DT_TAG");
-		console.log("  --force-v2/-2        use dtb v2 format");
-		console.log("  --help/-h            this help screen");
-	}
+function examine_dt(file_path, extract, output_dir) {
+	fs.open(file_path, 'r', function(err, fd) {
+	    if (err) {
+	        console.log("Failed to read file: " + err.message);
+	        return;
+	    }
+	    var header_size = 12,
+	    	header = new Buffer(header_size);
+	    fs.read(fd, header, 0, header_size, 0, function(e, bytesRead) {
+	    	if(e) {
+	    	    console.log("Failed to read header: " + e.message);
+	    	    return;
+	    	} else if(bytesRead != header_size) {
+	    	    console.log("Failed to read header, only got " + bytesRead + ' bytes, expecting ' + header_size + '.');
+	    	    return;
+	    	} 
+	    	// Parse the header with struct below.
+	    	if(header.slice(0, 4).toString() !== 'QCDT') {
+	    	    console.log('Wrong magic header ' + header.slice(0, 4).toJSON() + ', expecting "QCDT".');
+	    	    return;
+	    	}
+			var qcdt_ver = header.readUInt32LE(4);
+			var dt_num = header.readUInt32LE(8);
 
+			console.log("");
+			console.log("QCDT Version:  " + qcdt_ver);
+			console.log("Number of DTs:  " + dt_num);
+			console.log("");
+
+			var current_pos = 12,
+				current_dt_num = 0;
+
+			function check_dt_info(dt_idx) {
+				if(dt_idx >= dt_num) return;
+				if(qcdt_ver === 1) extract_portion(fd, 12 + 20 * dt_idx, 20, function(entry) {
+					var platform_id = entry.readUInt32LE(0);
+					var variant_id = entry.readUInt32LE(4);
+					var soc_rev = entry.readUInt32LE(8);
+					var offset = entry.readUInt32LE(12);
+					var size = entry.readUInt32LE(16);
+					console.log("DT " + padLeft((++dt_idx), 3) + ": Platform 0x" + padLeft(platform_id.toString(16), 2, '0') + " Variant 0x" + padLeft(variant_id.toString(16), 2, '0') + " SOC Rev 0x" + soc_rev.toString(16));
+					if(extract) extract_portion(fd, offset, size, path.resolve(output_dir, dt_idx + ".dtb"));
+					check_dt_info(dt_idx);
+				}); else if(qcdt_ver === 2) extract_portion(fd, 12 + 24 * dt_idx, 24, function(entry) {
+					var platform_id = entry.readUInt32LE(0);
+					var variant_id = entry.readUInt32LE(4);
+					var subtype = entry.readUInt32LE(8);
+					var soc_rev = entry.readUInt32LE(12);
+					var offset = entry.readUInt32LE(16);
+					var size = entry.readUInt32LE(20);
+					console.log("DT " + padLeft((++dt_idx), 3) + ": Platform 0x" + padLeft(platform_id.toString(16), 2, '0') + " Variant 0x" + padLeft(variant_id.toString(16), 2, '0') + " Sub Type 0x" + padLeft(subtype.toString(16), 2, '0') + " SOC Rev 0x" + soc_rev.toString(16));
+					if(extract) extract_portion(fd, offset, size, path.resolve(output_dir, dt_idx + ".dtb"));
+					check_dt_info(dt_idx);
+				}); else console.log("Unsupported QCDT version.");
+			}
+
+			check_dt_info(0);
+	    });
+	});
+}
+
+function main_create_dt() {
 	var input_path = undefined,
 		output = undefined,
 		page_size = 2048,
@@ -316,7 +384,83 @@ if(require.main === module) {
 	}
 
 	build_dt(input_path, output, search_dt_tag, search_board_tag, force_v2, page_size);
-} else module.exports = build_dt;
+}
+
+function main_extract_dt() {
+	var imgfile = undefined,
+		output = '.';
+
+	for(var i = 2; i < process.argv.length; i ++) {
+		if((process.argv[i] === '-o') || ((process.argv[i] === '--output-dir')))
+			output = process.argv[++i];
+		else {
+			if(imgfile === undefined) imgfile = process.argv[i];
+			else {
+				console.log('Invalid commandline option: ' + process.argv[i]);
+				return help();
+			}
+		}
+	}
+
+	if((!imgfile) || (typeof imgfile !== 'string') || 
+		(imgfile.trim().length === 0) || (!fs.existsSync(imgfile)) ||
+		(!fs.statSync(imgfile).isFile())) {
+		console.log('Invalid image file: ' + imgfile);
+		return 1;
+	}
+	if((!output) || (typeof output !== 'string') || 
+		(output.trim().length === 0) || (!fs.existsSync(output)) ||
+		(!fs.statSync(output).isDirectory())) {
+		console.log('Invalid output path: ' + output);
+		return 1;
+	}
+
+	examine_dt(imgfile, true, output);
+}
+
+function main_extract_dt_info_only() {
+	var imgfile = undefined;
+
+	for(var i = 2; i < process.argv.length; i ++) {
+		if(imgfile === undefined) imgfile = process.argv[i];
+		else {
+			console.log('Invalid commandline option: ' + process.argv[i]);
+			return help();
+		}
+	}
+
+	if((!imgfile) || (typeof imgfile !== 'string') || 
+		(imgfile.trim().length === 0) || (!fs.existsSync(imgfile)) ||
+		(!fs.statSync(imgfile).isFile())) {
+		console.log('Invalid image file: ' + imgfile);
+		return 1;
+	}
+	examine_dt(imgfile, false, undefined);
+}
+
+if(require.main === module) {
+	switch(process.argv[2]) {
+		case 'c':
+		case 'create':
+			process.argv.splice(2, 1);
+			main_create_dt();
+			break;
+		case 'e':
+		case 'extract':
+			process.argv.splice(2, 1);
+			main_extract_dt();
+			break;
+		case 'i':
+		case 'info':
+			process.argv.splice(2, 1);
+			main_extract_dt_info_only();
+			break;
+		default: return help();
+	}
+} else module.exports = {
+	examine_dt: examine_dt,
+	build_dt: build_dt
+}
 
 
  //                               size
