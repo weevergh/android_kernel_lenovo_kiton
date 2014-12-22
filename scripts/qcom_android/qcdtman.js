@@ -41,7 +41,7 @@ function extract_portion(fd, pos, length, output) {
 
 
 function help() {
-	console.log(process.argv[1] + " <info|extract|create> [options] <input file/path>");
+	console.log("Usage: " + process.argv[1] + " <info|extract|create> [options] <input file/path>");
 	console.log("QCOM DT manipulation script.")
 	console.log(" Options:")
 	console.log("  common:");
@@ -218,7 +218,7 @@ function build_final_image(dtbs, output, dtb_version, page_size) {
 	fs.writeFileSync(output, final_buffer);
 }
 
-function build_dt(input_path, output, search_dt_tag, search_board_tag, force_v2, page_size) {
+function build_qcdt(input_path, output, search_dt_tag, search_board_tag, force_v2, page_size) {
 	var dtbs = [ ],
 		files = fs.readdirSync(input_path).filter(function(f) { return /^.*\.dtb$/.test(f); });
 	files.forEach(function(file) {
@@ -260,7 +260,7 @@ function build_dt(input_path, output, search_dt_tag, search_board_tag, force_v2,
 	});
 }
 
-function examine_dt(file_path, extract, output_dir) {
+function examine_qcdt(file_path, extract, output_dir) {
 	fs.open(file_path, 'r', function(err, fd) {
 	    if (err) {
 	        console.log("Failed to read file: " + err.message);
@@ -383,7 +383,7 @@ function main_create_dt() {
 		} else console.log('Warning: Will overwrite existing output file ' + output);
 	}
 
-	build_dt(input_path, output, search_dt_tag, search_board_tag, force_v2, page_size);
+	build_qcdt(input_path, output, search_dt_tag, search_board_tag, force_v2, page_size);
 }
 
 function main_extract_dt() {
@@ -415,7 +415,7 @@ function main_extract_dt() {
 		return 1;
 	}
 
-	examine_dt(imgfile, true, output);
+	examine_qcdt(imgfile, true, output);
 }
 
 function main_extract_dt_info_only() {
@@ -435,7 +435,7 @@ function main_extract_dt_info_only() {
 		console.log('Invalid image file: ' + imgfile);
 		return 1;
 	}
-	examine_dt(imgfile, false, undefined);
+	examine_qcdt(imgfile, false, undefined);
 }
 
 if(require.main === module) {
@@ -458,8 +458,8 @@ if(require.main === module) {
 		default: return help();
 	}
 } else module.exports = {
-	examine_dt: examine_dt,
-	build_dt: build_dt
+	examine_qcdt: examine_qcdt,
+	build_qcdt: build_qcdt
 }
 
 
