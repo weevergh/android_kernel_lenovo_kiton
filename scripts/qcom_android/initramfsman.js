@@ -25,7 +25,7 @@ function help() {
     console.log("   command syntax:");
     console.log("    mkdir <archive path>");
     console.log("    put <local file> <archive file>");
-    console.log("    link <archive source file> <archive file>");
+    console.log("    link <source path> <archive path>");
     console.log("    remove <archive file/directory>");
 }
 
@@ -43,11 +43,8 @@ function Tree(data) {
 Tree.prototype.validate = function() {
     function walkTree(node, cb) {
         cb(node.nodeinfo);
-        for(var e in node.subdirs) {
-            if(node.subdirs[e].nodeinfo === undefined)
-                console.log('Invalid subdir ' + e);
+        for(var e in node.subdirs)
             walkTree(node.subdirs[e], cb);
-        }
         for(var e in node.files)
             cb(node.files[e]);
     }
@@ -57,6 +54,20 @@ Tree.prototype.validate = function() {
             res = false;
     });
     return res;
+}
+Tree.prototype.alloc_ino = function() {
+    function walkTree(node, cb) {
+        cb(node.nodeinfo);
+        for(var e in node.subdirs)
+            walkTree(node.subdirs[e], cb);
+        for(var e in node.files)
+            cb(node.files[e]);
+    }
+    var ino = true;
+    walkTree(this._$tree, function(stats) {
+        if(ino < stats.ino) ino = stats.ino;
+    });
+    return ino + 1;
 }
 Tree.prototype.fromBuffer = function(newc_data) {
     for(var i = 0; i < newc_data.length; ) {
@@ -285,18 +296,64 @@ Tree.prototype.rm = function(p) {
         curr_node = this._$tree;
     for(var i = 0; i < path_arr.length - 1; i ++) {
         if(curr_node.subdirs[path_arr[i]] === undefined) {
-            console.log('Failed to remove non-exit path "' + p + '".');
-            return;
+            console.log('Failed to remove non-exit path "' + p + '"');
+            return false;
         } else curr_node = curr_node.subdirs[path_arr[i]];
     }
     if(curr_node.subdirs[path_arr[path_arr.length - 1]]) {
         delete curr_node.subdirs[path_arr[path_arr.length - 1]];
-        console.log('Removed directory "' + p + '".');
+        curr_node.nodeinfo.nlink -= 1;
+        console.log('Removed directory "' + p + '"');
+        return true;
     } else if(curr_node.files[path_arr[path_arr.length - 1]]) {
         delete curr_node.files[path_arr[path_arr.length - 1]];
-        console.log('Removed entry "' + p + '".');
-    } else console.log('Failed to remove non-exit path "' + p + '".');
-}
+        console.log('Removed entry "' + p + '"');
+        return true;
+    } else console.log('Failed to remove non-exit path "' + p + '"');
+    return false;
+};
+Tree.prototype.mkdir = function(p) {
+    var path_arr = p.replace(/\/$/, '').split(/\//g),
+        curr_node = this._$tree;
+    for(var i = 0; i < path_arr.length - 1; i ++) {
+        if(curr_node.subdirs[path_arr[i]] === undefined) {
+            console.log('Failed to make directory cause parent "' + path_arr[i] + '" does not exit');
+            return false;
+        } else curr_node = curr_node.subdirs[path_arr[i]];
+    }
+    if(curr_node.subdirs[path_arr[path_arr.length - 1]])
+        console.log('Failed to make directory, target already exists');
+    else if(curr_node.files[path_arr[path_arr.length - 1]])
+        console.log('Failed to make directory, target already exists');
+    else {
+        var new_dir_stats = new fs.Stats;
+
+        new_dir_stats.data = new Buffer(0);
+        new_dir_stats.size = new_dir_stats.data.length;
+        new_dir_stats.name = p.replace(/\/$/, '');
+        new_dir_stats.namesize = new_dir_stats.name.length + 1;
+        new_dir_stats.mode = curr_node.nodeinfo.mode;
+        new_dir_stats.maj = curr_node.nodeinfo.maj;
+        new_dir_stats.min = curr_node.nodeinfo.min;
+        new_dir_stats.rmaj = curr_node.nodeinfo.rmaj;
+        new_dir_stats.rmin = curr_node.nodeinfo.rmin;
+        new_dir_stats.uid = curr_node.nodeinfo.uid;
+        new_dir_stats.gid = curr_node.nodeinfo.gid;
+        new_dir_stats.mtime = Math.floor(Date.now() / 1000);
+        new_dir_stats.ino = this.alloc_ino();
+        new_dir_stats.chksum = 0;
+        new_dir_stats.nlink = 2;
+
+        curr_node.nodeinfo.nlink += 1;
+        curr_node.subdirs[path_arr[path_arr.length - 1]] = {
+            subdirs: { },
+            files: { },
+            nodeinfo: new_dir_stats
+        };
+        return true;
+    }
+    return false;
+};
 Tree.prototype.ls = function(p) {
     function print_entry(stats, max_nlink_str_len, max_size_str_len) {        
         process.stdout.write(padLeft(stats.mode.toString(8), 6, '0'));
@@ -527,6 +584,64 @@ function main_create_initramfs() {
     zlib.gzip(tree.toBuffer(), function(err, gz_data) {
         fs.writeFileSync(output_file, gz_data);
     });
+}
+
+function main_modify_initramfs() {
+    var imgfile = undefined,
+        cmd_list = [];
+
+    for(var i = 2; i < process.argv.length; i ++) {
+        if(imgfile === undefined) imgfile = process.argv[i];
+        else {
+            switch(process.argv[i]) {
+                case 'm':
+                case 'md':
+                case 'mkdir':
+                    cmd_list.push({ cmd: 'mkdir', args: [process.argv[++ i]] });
+                    break;
+                case 'a':
+                case 'add':
+                case 'p':
+                case 'put':
+                    cmd_list.push({ cmd: 'put', args: [process.argv[++ i], process.argv[++ i]] });
+                    break;
+                case 'l':
+                case 'ln':
+                case 'link':
+                    cmd_list.push({ cmd: 'ln', args: [process.argv[++ i], process.process.argv[++ i]] });
+                    break;
+                case 'r':
+                case 'rm':
+                case 'remove':
+                    cmd_list.push({ cmd: 'rm', args: [process.argv[++ i]] });
+                    break;
+                default: {
+                    console.log('Invalid commandline option: ' + process.argv[i]);
+                    return help();
+                }
+            }
+        }
+    }
+    if((!imgfile) || (typeof imgfile !== 'string') || 
+        (imgfile.trim().length === 0) || (!fs.existsSync(imgfile)) ||
+        (!fs.statSync(imgfile).isFile())) {
+        console.log('Invalid image file: ' + imgfile);
+        return 1;
+    }
+
+    if(cmd_list.length >0 ) {
+        zlib.gunzip(fs.readFileSync(imgfile), function(err, newc_data) {
+            var tree = new Tree(newc_data);
+            for(var i = 0; i < cmd_list.length; i ++)
+                if(!tree[cmd_list[i].cmd].apply(tree, cmd_list[i].args)) {
+                    console.log('Archive not modified.');
+                    return 1;
+                }
+            zlib.gzip(tree.toBuffer(), function(err, gz_data) {
+                fs.writeFileSync(imgfile, gz_data);
+            });
+        })
+    } else console.log("No commands provided, archive not modified.");
 }
 
 if(require.main === module) {
