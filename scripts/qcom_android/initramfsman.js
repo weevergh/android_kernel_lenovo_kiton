@@ -43,8 +43,11 @@ function Tree(data) {
 Tree.prototype.validate = function() {
     function walkTree(node, cb) {
         cb(node.nodeinfo);
-        for(var e in node.subdirs)
+        for(var e in node.subdirs) {
+            if(node.subdirs[e].nodeinfo === undefined)
+                console.log('Invalid subdir ' + e);
             walkTree(node.subdirs[e], cb);
+        }
         for(var e in node.files)
             cb(node.files[e]);
     }
@@ -57,12 +60,19 @@ Tree.prototype.validate = function() {
 }
 Tree.prototype.fromBuffer = function(newc_data) {
     for(var i = 0; i < newc_data.length; ) {
-        if((i % 4) !== 0) i += 4 - (i % 4);
+        if((i % 4) !== 0) {
+            i += 4 - (i % 4);
+            continue;
+        }
         if(newc_data.slice(i, i + 6).toString() !== '070701') {
             if(newc_data[i] !== 0) {
-                console.log('Error extracting file entry from initramfs.');
+                console.log('Error extracting file entry from initramfs. ' + i + ':' + newc_data.length);
+                console.log(JSON.stringify(newc_data.slice(i - 6, i + 6)));
                 break;
-            } else i++;
+            } else {
+                i++;
+                continue;
+            }
         }
         var file_entry = new fs.Stats;
 
@@ -111,6 +121,11 @@ Tree.prototype.fromBuffer = function(newc_data) {
     if(!this.validate()) throw new Error('Invalid tree, something is wrong.');
 }
 Tree.prototype.toBuffer = function() {
+    if(!this.validate()) {
+        console.log('Invalid tree structure.')
+        return;
+    }
+
     function walkTree(node, cb) {
         cb(node.nodeinfo);
         for(var e in node.subdirs)
@@ -118,31 +133,82 @@ Tree.prototype.toBuffer = function() {
         for(var e in node.files)
             cb(node.files[e]);
     }
-    if(!this.validate()) {
-        console.log('Invalid tree structure.')
-        return;
-    }
-    console.log(console.dir(this._$tree));
 
     var res_buffer = new Buffer(0);
 
     walkTree(this._$tree, function(stats) {
-        var entry_buffer_len = 110 + stats.namesize;
+        var entry_buffer_len = 110 + stats.namesize,
+            data_start_pos = 0;
 
-        if(entry_buffer_len % 4 !== 0) entry_buffer_len += 4 - (entry_buffer_len % 4);
+        if((entry_buffer_len % 4) !== 0) entry_buffer_len += 4 - (entry_buffer_len % 4);
+        data_start_pos = entry_buffer_len;
         entry_buffer_len += stats.size;
-        if(entry_buffer_len % 4 !== 0) entry_buffer_len += 4 - (entry_buffer_len % 4);
+        if((entry_buffer_len % 4) !== 0) entry_buffer_len += 4 - (entry_buffer_len % 4);
 
         var entry_buffer = new Buffer(entry_buffer_len);
+        for(var i = 0 ; i < entry_buffer_len; i ++)
+            entry_buffer[i] = 0;
         // write content
+        entry_buffer.write("070701", 0, 6, 'ascii');
+        entry_buffer.write(padLeft(stats.ino.toString(16), 8, '0'),  6, 8, 'ascii');          //File inode number
+        entry_buffer.write(padLeft(stats.mode.toString(16), 8, '0'),  14, 8, 'ascii');        //File mode and permissions
+        entry_buffer.write(padLeft(stats.uid.toString(16), 8, '0'),  22, 8, 'ascii');         //File uid
+        entry_buffer.write(padLeft(stats.gid.toString(16), 8, '0'),  30, 8, 'ascii');         //File gid
+        entry_buffer.write(padLeft(stats.nlink.toString(16), 8, '0'),  38, 8, 'ascii');       //Number of links
+        entry_buffer.write(padLeft(stats.mtime.toString(16), 8, '0'),  46, 8, 'ascii');       //Modification time
+        entry_buffer.write(padLeft(stats.size.toString(16), 8, '0'),  54, 8, 'ascii');        //Size of data field
+        entry_buffer.write(padLeft(stats.maj.toString(16), 8, '0'),  62, 8, 'ascii');         //Major part of file device number
+        entry_buffer.write(padLeft(stats.min.toString(16), 8, '0'),  70, 8, 'ascii');         //Minor part of file device number
+        entry_buffer.write(padLeft(stats.rmaj.toString(16), 8, '0'),  78, 8, 'ascii');        //Major part of device node reference
+        entry_buffer.write(padLeft(stats.rmin.toString(16), 8, '0'),  86, 8, 'ascii');        //Minor part of device node reference
+        entry_buffer.write(padLeft(stats.namesize.toString(16), 8, '0'),  94, 8, 'ascii');    //Length of filename, including final \0
+        entry_buffer.write(padLeft(stats.chksum.toString(16), 8, '0'),  102, 8, 'ascii');     //zero
 
+        entry_buffer.write(stats.name + '\u0000', 110, stats.namesize);
+        stats.data.copy(entry_buffer, data_start_pos);
+        
         res_buffer = Buffer.concat([res_buffer, entry_buffer]);
     });
-
-    if(res_buffer.length % 512 !== 0)
-        res_buffer = Buffer.concat([res_buffer, new Buffer(512 - res_buffer.length % 512)]);
     
-    console.log('Total ' + (res_buffer.length / 512) + ' blocks')
+    var trailer = {
+            name: 'TRAILER!!!',
+            ino: 0, mode: 0, uid: 0, gid: 0,
+            nlink: 1, mtime: 0, size: 0,
+            maj: 0, min: 0,
+            rmaj: 0, rmin: 0,
+            namesize: 11, chksum: 0,
+            dev: 0, rdev: 0,
+            data: new Buffer(0)
+        },
+        trailer_buffer = new Buffer(124);
+    for(var i = 0 ; i < trailer_buffer.length; i ++)
+        trailer_buffer[i] = 0;
+    trailer_buffer.write("070701", 0, 6, 'ascii');
+    trailer_buffer.write(padLeft(trailer.ino.toString(16), 8, '0'),  6, 8, 'ascii');          //File inode number
+    trailer_buffer.write(padLeft(trailer.mode.toString(16), 8, '0'),  14, 8, 'ascii');        //File mode and permissions
+    trailer_buffer.write(padLeft(trailer.uid.toString(16), 8, '0'),  22, 8, 'ascii');         //File uid
+    trailer_buffer.write(padLeft(trailer.gid.toString(16), 8, '0'),  30, 8, 'ascii');         //File gid
+    trailer_buffer.write(padLeft(trailer.nlink.toString(16), 8, '0'),  38, 8, 'ascii');       //Number of links
+    trailer_buffer.write(padLeft(trailer.mtime.toString(16), 8, '0'),  46, 8, 'ascii');       //Modification time
+    trailer_buffer.write(padLeft(trailer.size.toString(16), 8, '0'),  54, 8, 'ascii');        //Size of data field
+    trailer_buffer.write(padLeft(trailer.maj.toString(16), 8, '0'),  62, 8, 'ascii');         //Major part of file device number
+    trailer_buffer.write(padLeft(trailer.min.toString(16), 8, '0'),  70, 8, 'ascii');         //Minor part of file device number
+    trailer_buffer.write(padLeft(trailer.rmaj.toString(16), 8, '0'),  78, 8, 'ascii');        //Major part of device node reference
+    trailer_buffer.write(padLeft(trailer.rmin.toString(16), 8, '0'),  86, 8, 'ascii');        //Minor part of device node reference
+    trailer_buffer.write(padLeft(trailer.namesize.toString(16), 8, '0'),  94, 8, 'ascii');    //Length of filename, including final \0
+    trailer_buffer.write(padLeft(trailer.chksum.toString(16), 8, '0'),  102, 8, 'ascii');     //zero
+    trailer_buffer.write(trailer.name, 110);
+
+    res_buffer = Buffer.concat([res_buffer, trailer_buffer]);
+
+    if((res_buffer.length % 512) !== 0) {
+        var padding = new Buffer(512 - (res_buffer.length % 512));
+        for(var i = 0 ; i < padding.length; i ++)
+            padding[i] = 0;
+        res_buffer = Buffer.concat([res_buffer, padding]);
+    }
+    
+    console.log((res_buffer.length / 512) + ' blocks')
 
     return res_buffer;
 }
@@ -175,7 +241,9 @@ Tree.prototype.addEntry = function(entry) {
                 files: { }, 
                 nodeinfo: entry
             }
-        else throw Error('Duplicate directory node ' + entry.name);
+        else if(curr_node.subdirs[path_arr[path_arr.length - 1]].nodeinfo !== undefined) 
+            throw Error('Duplicate directory node ' + entry.name);
+        else curr_node.subdirs[path_arr[path_arr.length - 1]].nodeinfo = entry;
     } else {
         if(curr_node.files[path_arr[path_arr.length - 1]] === undefined)
             curr_node.files[path_arr[path_arr.length - 1]] = entry;
@@ -420,6 +488,7 @@ function main_create_initramfs() {
     root_stats.chksum = 0;
     root_stats.name = '.';
     root_stats.data = new Buffer(0);
+    root_stats.size = root_stats.data .length;
 
     tree.addEntry(root_stats);
 
@@ -435,6 +504,7 @@ function main_create_initramfs() {
             if(stats.isSymbolicLink()) stats.data = new Buffer(fs.readlinkSync(local_path));
             else if(stats.isFile()) stats.data = fs.readFileSync(local_path);
             else stats.data = new Buffer(0);
+            stats.size = stats.data.length;
             stats.chksum = 0;
             stats.namesize = stats.name.length + 1;
             stats.maj = stats.dev >> 8;
