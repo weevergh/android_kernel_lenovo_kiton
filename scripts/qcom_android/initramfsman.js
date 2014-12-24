@@ -24,6 +24,8 @@ function help() {
     console.log("  modify <image file> [commands]");
     console.log("   command syntax:");
     console.log("    mkdir <archive path>");
+    console.log("    chown <archive path> <uid> <gid>");
+    console.log("    chmod <archive path> <access mode in 4 digit, ex. 4755 would translate to srwxr-xr-x>");
     console.log("    put <local file> <archive file>");
     console.log("    link <source path> <archive path>");
     console.log("    remove <archive file/directory>");
@@ -87,19 +89,19 @@ Tree.prototype.fromBuffer = function(newc_data) {
         }
         var file_entry = new fs.Stats;
 
-        file_entry.ino = parseInt('0x' + newc_data.slice(i + 6, i + 14).toString());          //File inode number
-        file_entry.mode = parseInt('0x' + newc_data.slice(i + 14, i + 22).toString());        //File mode and permissions
-        file_entry.uid = parseInt('0x' + newc_data.slice(i + 22, i + 30).toString());         //File uid
-        file_entry.gid = parseInt('0x' + newc_data.slice(i + 30, i + 38).toString());         //File gid
-        file_entry.nlink = parseInt('0x' + newc_data.slice(i + 38, i + 46).toString());       //Number of links
-        file_entry.mtime = parseInt('0x' + newc_data.slice(i + 46, i + 54).toString());       //Modification time
-        file_entry.size = parseInt('0x' + newc_data.slice(i + 54, i + 62).toString());        //Size of data field
-        file_entry.maj = parseInt('0x' + newc_data.slice(i + 62, i + 70).toString());         //Major part of file device number
-        file_entry.min = parseInt('0x' + newc_data.slice(i + 70, i + 78).toString());         //Minor part of file device number
-        file_entry.rmaj = parseInt('0x' + newc_data.slice(i + 78, i + 86).toString());        //Major part of device node reference
-        file_entry.rmin = parseInt('0x' + newc_data.slice(i + 86, i + 94).toString());        //Minor part of device node reference
-        file_entry.namesize = parseInt('0x' + newc_data.slice(i + 94, i + 102).toString());   //Length of filename, including final \0
-        file_entry.chksum = parseInt('0x' + newc_data.slice(i + 102, i + 110).toString());    //zero
+        file_entry.ino = parseInt(newc_data.slice(i + 6, i + 14).toString(), 16);          //File inode number
+        file_entry.mode = parseInt(newc_data.slice(i + 14, i + 22).toString(), 16);        //File mode and permissions
+        file_entry.uid = parseInt(newc_data.slice(i + 22, i + 30).toString(), 16);         //File uid
+        file_entry.gid = parseInt(newc_data.slice(i + 30, i + 38).toString(), 16);         //File gid
+        file_entry.nlink = parseInt(newc_data.slice(i + 38, i + 46).toString(), 16);       //Number of links
+        file_entry.mtime = parseInt(newc_data.slice(i + 46, i + 54).toString(), 16);       //Modification time
+        file_entry.size = parseInt(newc_data.slice(i + 54, i + 62).toString(), 16);        //Size of data field
+        file_entry.maj = parseInt(newc_data.slice(i + 62, i + 70).toString(), 16);         //Major part of file device number
+        file_entry.min = parseInt(newc_data.slice(i + 70, i + 78).toString(), 16);         //Minor part of file device number
+        file_entry.rmaj = parseInt(newc_data.slice(i + 78, i + 86).toString(), 16);        //Major part of device node reference
+        file_entry.rmin = parseInt(newc_data.slice(i + 86, i + 94).toString(), 16);        //Minor part of device node reference
+        file_entry.namesize = parseInt(newc_data.slice(i + 94, i + 102).toString(), 16);   //Length of filename, including final \0
+        file_entry.chksum = parseInt(newc_data.slice(i + 102, i + 110).toString(), 16);    //zero
         
         file_entry.dev = (file_entry.maj << 8) + file_entry.min;
         file_entry.rdev = (file_entry.rmaj << 8) + file_entry.rmin;
@@ -312,6 +314,65 @@ Tree.prototype.rm = function(p) {
     } else console.log('Failed to remove non-exit path "' + p + '"');
     return false;
 };
+Tree.prototype.chown = function(p, uid_str, gid_str) {
+    var uid = parseInt(uid_str, 10),
+        gid = parseInt(gid_str, 10);
+
+    if(Number.isNaN(uid) || Number.isNaN(gid)) {
+        console.log('Invalid uid/gid');
+        return false;
+    }
+
+    var path_arr = p.replace(/\/$/, '').split(/\//g),
+        curr_node = this._$tree;
+    for(var i = 0; i < path_arr.length - 1; i ++) {
+        if(curr_node.subdirs[path_arr[i]] === undefined) {
+            console.log('Failed to chown for non-exit path "' + p + '"');
+            return false;
+        } else curr_node = curr_node.subdirs[path_arr[i]];
+    }
+    if(curr_node.subdirs[path_arr[path_arr.length - 1]]) {
+        curr_node.subdirs[path_arr[path_arr.length - 1]].nodeinfo.uid = uid;
+        curr_node.subdirs[path_arr[path_arr.length - 1]].nodeinfo.gid = gid;
+        console.log('Ownership of directory "' + p + '" is now uid: ' + uid + ' gid: ' + gid);
+        return true;
+    } else if(curr_node.files[path_arr[path_arr.length - 1]]) {
+        curr_node.files[path_arr[path_arr.length - 1]].uid = uid;
+        curr_node.files[path_arr[path_arr.length - 1]].gid = gid;
+        console.log('Ownership of entry "' + p + '" is now uid: ' + uid + ' gid: ' + gid);
+        return true;
+    } else console.log('Failed to chown for non-exit path "' + p + '"');
+    return false;
+};
+Tree.prototype.chmod = function(p, mode_str) {
+    var mode = parseInt(mode_str, 8);
+    
+    if(Number.isNaN(mode) || (typeof mode_str !== 'string') || (mode_str.length !== 4)) {
+        console.log('Invalid mode ' + mode_str);
+        return false;
+    }
+
+    var path_arr = p.replace(/\/$/, '').split(/\//g),
+        curr_node = this._$tree;
+    for(var i = 0; i < path_arr.length - 1; i ++) {
+        if(curr_node.subdirs[path_arr[i]] === undefined) {
+            console.log('Failed to chmod for non-exit path "' + p + '"');
+            return false;
+        } else curr_node = curr_node.subdirs[path_arr[i]];
+    }
+    if(curr_node.subdirs[path_arr[path_arr.length - 1]]) {
+        curr_node.subdirs[path_arr[path_arr.length - 1]].nodeinfo.mode &= 0xF000;
+        curr_node.subdirs[path_arr[path_arr.length - 1]].nodeinfo.mode |= mode;
+        console.log('Mode of directory "' + p + '" is now ' + mode_str);
+        return true;
+    } else if(curr_node.files[path_arr[path_arr.length - 1]]) {
+        curr_node.files[path_arr[path_arr.length - 1]].mode &= 0xF000;
+        curr_node.files[path_arr[path_arr.length - 1]].mode |= mode;
+        console.log('Mode of entry "' + p + '" is now ' + mode_str);
+        return true;
+    } else console.log('Failed to chmod for non-exit path "' + p + '"');
+    return false;
+};
 Tree.prototype.mkdir = function(p) {
     var path_arr = p.replace(/\/$/, '').split(/\//g),
         curr_node = this._$tree;
@@ -350,16 +411,106 @@ Tree.prototype.mkdir = function(p) {
             files: { },
             nodeinfo: new_dir_stats
         };
+        console.log('Made directory "' + p + '"');
+        return true;
+    }
+    return false;
+};
+Tree.prototype.ln = function(orig, target) {
+    var path_arr = target.split(/\//g),
+        curr_node = this._$tree;
+    for(var i = 0; i < path_arr.length - 1; i ++) {
+        if(curr_node.subdirs[path_arr[i]] === undefined) {
+            console.log('Failed to make link cause parent "' + path_arr[i] + '" does not exit');
+            return false;
+        } else curr_node = curr_node.subdirs[path_arr[i]];
+    }
+    if(curr_node.subdirs[path_arr[path_arr.length - 1]])
+        console.log('Failed to make link, target already exists');
+    else if(curr_node.files[path_arr[path_arr.length - 1]])
+        console.log('Failed to make link, target already exists');
+    else {
+        var new_link_stats = new fs.Stats;
+
+        new_link_stats.data = new Buffer(orig);
+        new_link_stats.size = new_link_stats.data.length;
+        new_link_stats.name = target;
+        new_link_stats.namesize = new_link_stats.name.length + 1;
+        new_link_stats.mode = curr_node.nodeinfo.mode & 0xFFF | 0xA000;
+        new_link_stats.maj = curr_node.nodeinfo.maj;
+        new_link_stats.min = curr_node.nodeinfo.min;
+        new_link_stats.rmaj = curr_node.nodeinfo.rmaj;
+        new_link_stats.rmin = curr_node.nodeinfo.rmin;
+        new_link_stats.uid = curr_node.nodeinfo.uid;
+        new_link_stats.gid = curr_node.nodeinfo.gid;
+        new_link_stats.mtime = Math.floor(Date.now() / 1000);
+        new_link_stats.ino = this.alloc_ino();
+        new_link_stats.chksum = 0;
+        new_link_stats.nlink = 1;
+
+        curr_node.files[path_arr[path_arr.length - 1]] = new_link_stats;
+
+        console.log('Made soft link "' + target + '" -> "' + orig + '"');
+        return true;
+    }
+    return false;
+};
+Tree.prototype.put = function(local_file, target) {
+    if((!local_file) || (typeof local_file !== 'string') || 
+        (local_file.trim().length === 0) || (!fs.existsSync(local_file)) ||
+        (!fs.statSync(local_file).isFile())) {
+        console.log('Cannod put invalid local file "' + local_file + '" into archive');
+        return false;
+    }
+
+    var path_arr = target.split(/\//g),
+        curr_node = this._$tree;
+    for(var i = 0; i < path_arr.length - 1; i ++) {
+        if(curr_node.subdirs[path_arr[i]] === undefined) {
+            console.log('Failed to put file cause parent "' + path_arr[i] + '" does not exit');
+            return false;
+        } else curr_node = curr_node.subdirs[path_arr[i]];
+    }
+    if(curr_node.subdirs[path_arr[path_arr.length - 1]])
+        console.log('Failed to put file, target already exists');
+    else if(curr_node.files[path_arr[path_arr.length - 1]])
+        console.log('Failed to put file, target already exists');
+    else {
+        var new_file_stats = new fs.Stats;
+
+        new_file_stats.data = fs.readFileSync(local_file);
+        new_file_stats.size = new_file_stats.data.length;
+        new_file_stats.name = target;
+        new_file_stats.namesize = new_file_stats.name.length + 1;
+        new_file_stats.mode = curr_node.nodeinfo.mode & 0xFFF | 0x8000;
+        new_file_stats.maj = curr_node.nodeinfo.maj;
+        new_file_stats.min = curr_node.nodeinfo.min;
+        new_file_stats.rmaj = curr_node.nodeinfo.rmaj;
+        new_file_stats.rmin = curr_node.nodeinfo.rmin;
+        new_file_stats.uid = curr_node.nodeinfo.uid;
+        new_file_stats.gid = curr_node.nodeinfo.gid;
+        new_file_stats.mtime = Math.floor(Date.now() / 1000);
+        new_file_stats.ino = this.alloc_ino();
+        new_file_stats.chksum = 0;
+        new_file_stats.nlink = 1;
+
+        curr_node.files[path_arr[path_arr.length - 1]] = new_file_stats;
+
+        console.log('Put local file "' + local_file + '" to "' + target + '"');
         return true;
     }
     return false;
 };
 Tree.prototype.ls = function(p) {
     function print_entry(stats, max_nlink_str_len, max_size_str_len) {        
-        process.stdout.write(padLeft(stats.mode.toString(8), 6, '0'));
+        process.stdout.write(padLeft(stats.mode.toString(8), 7, '0'));
         process.stdout.write(' ');
         process.stdout.write(padLeft(stats.nlink.toString(10), max_nlink_str_len, ' '));
         process.stdout.write(' ');
+        process.stdout.write(padLeft(stats.uid.toString(10), 5, ' '));
+        process.stdout.write(' ');
+        process.stdout.write(padLeft(stats.gid.toString(10), 5, ' '));
+        process.stdout.write('  ');
         process.stdout.write(padLeft(stats.size.toString(10), max_size_str_len, ' '));
         process.stdout.write(' ');
         process.stdout.write(new Date(stats.mtime * 1000).toJSON().replace(/\.000Z$/, ''));
@@ -433,7 +584,7 @@ function main_dump_tree_initramfs() {
 
     for(var i = 2; i < process.argv.length; i ++) {
         if(imgfile === undefined) imgfile = process.argv[i];
-        else if(max_level === undefined) max_level = parseInt(process.argv[i]);
+        else if(max_level === undefined) max_level = parseInt(process.argv[i], 10);
         else {
             console.log('Invalid commandline option: ' + process.argv[i]);
             return help();
@@ -605,10 +756,16 @@ function main_modify_initramfs() {
                 case 'put':
                     cmd_list.push({ cmd: 'put', args: [process.argv[++ i], process.argv[++ i]] });
                     break;
+                case 'chown':
+                    cmd_list.push({ cmd: 'chown', args: [process.argv[++ i], process.argv[++ i], process.argv[++ i]] });
+                    break;
+                case 'chmod':
+                    cmd_list.push({ cmd: 'chmod', args: [process.argv[++ i], process.argv[++ i]] });
+                    break;
                 case 'l':
                 case 'ln':
                 case 'link':
-                    cmd_list.push({ cmd: 'ln', args: [process.argv[++ i], process.process.argv[++ i]] });
+                    cmd_list.push({ cmd: 'ln', args: [process.argv[++ i], process.argv[++ i]] });
                     break;
                 case 'r':
                 case 'rm':
