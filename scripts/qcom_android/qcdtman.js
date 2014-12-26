@@ -41,17 +41,17 @@ function extract_portion(fd, pos, length, output) {
 
 
 function help() {
-	console.log("Usage: " + process.argv[1] + " <info|extract|create> [options] <input file/path>");
+	console.log("Usage: " + process.argv[1] + " <info|extract|create> [args]");
 	console.log("QCOM DT manipulation script.")
-	console.log(" Options:")
-	console.log("  common:");
+	console.log(" Functions:")
+	console.log("  common");
 	console.log("   --help/-h            this help screen");
-	console.log("  info:");
+	console.log("  info <input file>");
 	console.log("   No available options");
-	console.log("  extract:");
-	console.log("   --output-dir/-o      output path");
-	console.log("  create:");
-	console.log("   --output-file/-o     output file");
+	console.log("  extract [options] <input file>");
+	console.log("   --output-dir/-o      output path, mandantory");
+	console.log("  create [options] <dtb dir>");
+	console.log("   --output-file/-o     output file, mandantory");
 	console.log("   --page-size/-s       page size in bytes");
 	console.log("   --dt-tag/-d          alternate QCDT_DT_TAG");
 	console.log("   --force-v2/-2        use dtb v2 format");

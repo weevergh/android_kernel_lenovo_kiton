@@ -14,11 +14,11 @@ function padLeft( number, width, filler ) {
 
 function help() {
     console.log("Usage:");
-    console.log(process.argv[1] + " <tree|list|extract|create|modify> [args]");
+    console.log(process.argv[1] + " <tree|ls|cat|create|modify> [args]");
     console.log("Simple initramfs(gzipped cpio newc archive) manipulation script.")
     console.log(" Functions:")
     console.log("  tree <image file> [max dump level]");
-    console.log("  list <image file> [target path]");
+    console.log("  ls <image file> [target path]");
     console.log("  cat <image file> <target file>");
     console.log("  create <input dir> <output file>");
     console.log("  modify <image file> [commands]");
@@ -33,7 +33,7 @@ function help() {
 
 // Ugly implementation to suite certain needs
 // For example only '.' is considered valid root, etc.
-function Tree(data) {    
+function InitRamFs(data) {    
     this._$tree = { 
         subdirs: { },
         files: { }, 
@@ -42,36 +42,36 @@ function Tree(data) {
     if(Array.isArray(data)) data.forEach(function(e) { this.addEntry(e); }, this);
     else if(Buffer.isBuffer(data)) this.fromBuffer(data);
 }
-Tree.prototype.validate = function() {
-    function walkTree(node, cb) {
+InitRamFs.prototype.validate = function() {
+    function walkInitRamFs(node, cb) {
         cb(node.nodeinfo);
         for(var e in node.subdirs)
-            walkTree(node.subdirs[e], cb);
+            walkInitRamFs(node.subdirs[e], cb);
         for(var e in node.files)
             cb(node.files[e]);
     }
     var res = true;
-    walkTree(this._$tree, function(stats) {
+    walkInitRamFs(this._$tree, function(stats) {
         if(res && (stats === undefined))
             res = false;
     });
     return res;
 }
-Tree.prototype.alloc_ino = function() {
-    function walkTree(node, cb) {
+InitRamFs.prototype.alloc_ino = function() {
+    function walkInitRamFs(node, cb) {
         cb(node.nodeinfo);
         for(var e in node.subdirs)
-            walkTree(node.subdirs[e], cb);
+            walkInitRamFs(node.subdirs[e], cb);
         for(var e in node.files)
             cb(node.files[e]);
     }
     var ino = true;
-    walkTree(this._$tree, function(stats) {
+    walkInitRamFs(this._$tree, function(stats) {
         if(ino < stats.ino) ino = stats.ino;
     });
     return ino + 1;
 }
-Tree.prototype.fromBuffer = function(newc_data) {
+InitRamFs.prototype.fromBuffer = function(newc_data) {
     for(var i = 0; i < newc_data.length; ) {
         if((i % 4) !== 0) {
             i += 4 - (i % 4);
@@ -133,23 +133,23 @@ Tree.prototype.fromBuffer = function(newc_data) {
     }
     if(!this.validate()) throw new Error('Invalid tree, something is wrong.');
 }
-Tree.prototype.toBuffer = function() {
+InitRamFs.prototype.toBuffer = function() {
     if(!this.validate()) {
         console.log('Invalid tree structure.')
         return;
     }
 
-    function walkTree(node, cb) {
+    function walkInitRamFs(node, cb) {
         cb(node.nodeinfo);
         for(var e in node.subdirs)
-            walkTree(node.subdirs[e], cb);
+            walkInitRamFs(node.subdirs[e], cb);
         for(var e in node.files)
             cb(node.files[e]);
     }
 
     var res_buffer = new Buffer(0);
 
-    walkTree(this._$tree, function(stats) {
+    walkInitRamFs(this._$tree, function(stats) {
         var entry_buffer_len = 110 + stats.namesize,
             data_start_pos = 0;
 
@@ -225,7 +225,7 @@ Tree.prototype.toBuffer = function() {
 
     return res_buffer;
 }
-Tree.prototype.addEntry = function(entry) {
+InitRamFs.prototype.addEntry = function(entry) {
     if((entry.name === 'TRAILER!!!') && (entry.dev === 0) &&
         (entry.rdev === 0) && (entry.ino === 0) && (entry.mode === 0))
         return;
@@ -263,7 +263,7 @@ Tree.prototype.addEntry = function(entry) {
         else throw Error('Duplicate entry node ' + entry.name);
     }
 };
-Tree.prototype.dump = function(max_level) {
+InitRamFs.prototype.dump = function(max_level) {
     function dump_one_folder(node, level) {
         /* print prefix */ 
         for(var i= 0 ; i < level; i++) {
@@ -293,7 +293,7 @@ Tree.prototype.dump = function(max_level) {
     }
     dump_one_folder(this._$tree, 0);
 };
-Tree.prototype.rm = function(p) {
+InitRamFs.prototype.rm = function(p) {
     var path_arr = p.replace(/\/$/, '').split(/\//g),
         curr_node = this._$tree;
     for(var i = 0; i < path_arr.length - 1; i ++) {
@@ -314,7 +314,7 @@ Tree.prototype.rm = function(p) {
     } else console.log('Failed to remove non-exit path "' + p + '"');
     return false;
 };
-Tree.prototype.chown = function(p, uid_str, gid_str) {
+InitRamFs.prototype.chown = function(p, uid_str, gid_str) {
     var uid = parseInt(uid_str, 10),
         gid = parseInt(gid_str, 10);
 
@@ -344,7 +344,7 @@ Tree.prototype.chown = function(p, uid_str, gid_str) {
     } else console.log('Failed to chown for non-exit path "' + p + '"');
     return false;
 };
-Tree.prototype.chmod = function(p, mode_str) {
+InitRamFs.prototype.chmod = function(p, mode_str) {
     var mode = parseInt(mode_str, 8);
     
     if(Number.isNaN(mode) || (typeof mode_str !== 'string') || (mode_str.length !== 4)) {
@@ -373,7 +373,7 @@ Tree.prototype.chmod = function(p, mode_str) {
     } else console.log('Failed to chmod for non-exit path "' + p + '"');
     return false;
 };
-Tree.prototype.mkdir = function(p) {
+InitRamFs.prototype.mkdir = function(p) {
     var path_arr = p.replace(/\/$/, '').split(/\//g),
         curr_node = this._$tree;
     for(var i = 0; i < path_arr.length - 1; i ++) {
@@ -416,7 +416,7 @@ Tree.prototype.mkdir = function(p) {
     }
     return false;
 };
-Tree.prototype.ln = function(orig, target) {
+InitRamFs.prototype.ln = function(orig, target) {
     var path_arr = target.split(/\//g),
         curr_node = this._$tree;
     for(var i = 0; i < path_arr.length - 1; i ++) {
@@ -455,7 +455,7 @@ Tree.prototype.ln = function(orig, target) {
     }
     return false;
 };
-Tree.prototype.put = function(local_file, target) {
+InitRamFs.prototype.put = function(local_file, target) {
     if((!local_file) || (typeof local_file !== 'string') || 
         (local_file.trim().length === 0) || (!fs.existsSync(local_file)) ||
         (!fs.statSync(local_file).isFile())) {
@@ -501,7 +501,7 @@ Tree.prototype.put = function(local_file, target) {
     }
     return false;
 };
-Tree.prototype.ls = function(p) {
+InitRamFs.prototype.ls = function(p) {
     function print_entry(stats, max_nlink_str_len, max_size_str_len) {        
         process.stdout.write(padLeft(stats.mode.toString(8), 7, '0'));
         process.stdout.write(' ');
@@ -545,7 +545,9 @@ Tree.prototype.ls = function(p) {
             print_entry(s, max_nlink_str_len, max_size_str_len);
         });
     }
-    if(p === '.') print_entry(this._$tree.nodeinfo);
+    if((!p) || (typeof p !== 'string') || (p.trim().length === 0))
+        console.log('No target path provided to list.');
+    else if(p === '.') print_entry(this._$tree.nodeinfo);
     else if(p === './') print_dir(this._$tree);
     else {
         var path_arr = p.replace(/\/$/, '').split(/\//g),
@@ -553,29 +555,31 @@ Tree.prototype.ls = function(p) {
         for(var i = 0; i < path_arr.length - 1; i ++) {
             if(curr_node.subdirs[path_arr[i]] === undefined) {
                 console.log('Path "' + p + '" does not exit.');
-                return;
+                return true;
             } else curr_node = curr_node.subdirs[path_arr[i]];
         }
         if(curr_node.subdirs[path_arr[path_arr.length - 1]]) {
             if(/\/$/.test(p)) print_dir(curr_node.subdirs[path_arr[path_arr.length - 1]]);
             else print_entry(curr_node.subdirs[path_arr[path_arr.length - 1]].nodeinfo);
         } else if(curr_node.files[path_arr[path_arr.length - 1]]) print_entry(curr_node.files[path_arr[path_arr.length - 1]]);
-        else console.log('Path "' + p + '" does not exit.');        
+        else console.log('Path "' + p + '" does not exit.'); 
     }
+    return true
 };
-Tree.prototype.cat = function(p) {
+InitRamFs.prototype.cat = function(p) {
     var path_arr = p.replace(/\/$/, '').split(/\//g),
         curr_node = this._$tree;
     for(var i = 0; i < path_arr.length - 1; i ++) {
         if(curr_node.subdirs[path_arr[i]] === undefined) {
             console.log('Path "' + p + '" does not exit.');
-            return;
+            return true;
         } else curr_node = curr_node.subdirs[path_arr[i]];
     }
     if(curr_node.subdirs[path_arr[path_arr.length - 1]]) console.log('Path "' + p + '" is a directory.');
     else if(curr_node.files[path_arr[path_arr.length - 1]])
         process.stdout.write(curr_node.files[path_arr[path_arr.length - 1]].data);
     else console.log('Path "' + p + '" does not exit.');
+    return true;
 }
 
 function main_dump_tree_initramfs() {
@@ -603,11 +607,11 @@ function main_dump_tree_initramfs() {
     }
 
     zlib.gunzip(fs.readFileSync(imgfile), function(err, newc_data) {
-        new Tree(newc_data).dump(max_level);
+        new InitRamFs(newc_data).dump(max_level);
     })
 }
 
-function main_list_initramfs() {
+function main_ls_initramfs() {
     var imgfile = undefined,
         target_path = undefined;
 
@@ -628,7 +632,7 @@ function main_list_initramfs() {
     if(!target_path) target_path = './';
 
     zlib.gunzip(fs.readFileSync(imgfile), function(err, newc_data) {
-        new Tree(newc_data).ls(target_path);
+        new InitRamFs(newc_data).ls(target_path);
     })
 }
 
@@ -656,7 +660,7 @@ function main_cat_file_initramfs() {
     }
 
     zlib.gunzip(fs.readFileSync(imgfile), function(err, newc_data) {
-        new Tree(newc_data).cat(target_path);
+        new InitRamFs(newc_data).cat(target_path);
     })
 }
 
@@ -685,7 +689,7 @@ function main_create_initramfs() {
         return 1;
     }    
 
-    var tree = new Tree,
+    var tree = new InitRamFs,
         root_stats = fs.statSync(root_dir);
     root_stats.mtime = Math.floor(root_stats.mtime.getTime() / 1000);
     root_stats.maj = root_stats.dev >> 8;
@@ -700,7 +704,7 @@ function main_create_initramfs() {
 
     tree.addEntry(root_stats);
 
-    function walkLocalTree(target_path, archive_path) {
+    function walkLocalInitRamFs(target_path, archive_path) {
         var non_dirs = [ ];
         fs.readdirSync(target_path).forEach(function(e) {
             var entry_path = archive_path.slice(),
@@ -723,14 +727,14 @@ function main_create_initramfs() {
             
             if(stats.isDirectory()) {
                 tree.addEntry(stats);
-                walkLocalTree(local_path, entry_path);
+                walkLocalInitRamFs(local_path, entry_path);
             } else non_dirs.push(stats);
         });
         non_dirs.forEach(function(e) {
             tree.addEntry(e);
         });
     }
-    walkLocalTree(root_dir, [ ]);
+    walkLocalInitRamFs(root_dir, [ ]);
 
     zlib.gzip(tree.toBuffer(), function(err, gz_data) {
         fs.writeFileSync(output_file, gz_data);
@@ -788,7 +792,7 @@ function main_modify_initramfs() {
 
     if(cmd_list.length >0 ) {
         zlib.gunzip(fs.readFileSync(imgfile), function(err, newc_data) {
-            var tree = new Tree(newc_data);
+            var tree = new InitRamFs(newc_data);
             for(var i = 0; i < cmd_list.length; i ++)
                 if(!tree[cmd_list[i].cmd].apply(tree, cmd_list[i].args)) {
                     console.log('Archive not modified.');
@@ -812,7 +816,7 @@ if(require.main === module) {
         case "ls":
         case "list":
             process.argv.splice(2, 1);
-            main_list_initramfs();
+            main_ls_initramfs();
             break;
         case "cat":
             process.argv.splice(2, 1);
@@ -830,7 +834,7 @@ if(require.main === module) {
             break;
         default: return help();
     }
-} else module.exports = Tree;
+} else module.exports = InitRamFs;
 
 
 // See: https://www.kernel.org/doc/Documentation/early-userspace/buffer-format.txt
